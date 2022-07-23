@@ -1,0 +1,591 @@
+<html lang="en">
+<head>
+<script src='https://d3js.org/d3.v7.min.js'></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+</head>
+<!-- svg that displays all our plots -->
+<svg width="1525" height="740" id="first"></svg>
+<!-- References have been added to the end of the code -->
+<body>
+    <script>
+        // Load the geojson for displaying map, and our csv with the data to visualize
+        Promise.all([d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
+                    d3.csv("owid-covid-data.csv")])
+                    .then(function(all_data) {
+            geo_data = all_data[0]      // store our map data in geo_data variable to later generate the map
+            data = all_data[1]          // store our covid data in data variable
+            var parseDate = d3.timeParse("%Y-%m-%d");       // create an object that will convert our data from string to datetime object in js
+            // Create an array that stores the covid data that is grouped by date and the other columns as a dictionary for that date
+            var newa = Array.from(d3.group(data, d => d.date), ([key, value]) => ({key, value}))
+            var final_asia_data = new Array();      // This variable will store our final data that will be used to plot our line graphs
+
+            // ################################################ DATA GENERATION FOR QUERIES ################################################
+
+            // This function generates data for the country that is passed into the functions arguements and stores it in final_asia_data.
+            // This function is called everytime a new country is selected from the map or scatterplot to generate data for that country
+            // to display in the line graphs
+            function gen_data(name, isCountry){
+                final_asia_data.length = 0;         // Empty the previous data present in our array.
+                for (let i=0; i<newa.length; i++){  // iterate through every row of data grouped by date in newa array
+                    var asia_data = newa[i].value.filter(function(d){       // filter location for the country required
+                                    if(isCountry == false){     // check if name supplied in the function is country or continent
+                                        return d.continent == name;     // if false, filter data only from that continent
+                                    }
+                                    else{
+                                        return d.location == name;      // if true, filter data from the specified country.
+                                    }
+                                })
+                    if(asia_data.length == 0){      // if null data is encountered, we simply skip that row and continue to next iteration
+                        continue
+                    }
+                    // push each data point into the final_asia_data array that is then used to display our line graphs and query 1
+                    final_asia_data.push({  
+                                            month:newa[i].key,
+                                            iso:asia_data[0].iso_code,
+                                            new_cases:d3.sum(asia_data, d => d.new_cases), 
+                                            new_deaths:d3.sum(asia_data, d => d.new_deaths),
+                                            // ########################## query 2 data ###############################
+                                            gdp:d3.mean(asia_data, d => d.gdp_per_capita),
+                                            handwash:d3.mean(asia_data, d => d.handwashing_facilities),
+                                            life_expectancy:d3.mean(asia_data, d => d.life_expectancy),
+                                            // ########################## query 3 data ###############################
+                                            total_vaccinations:d3.mean(asia_data, d => d.total_vaccinations),
+                                            people_fully_vaccinated:d3.mean(asia_data, d => d.people_fully_vaccinated),
+                                            total_boosters:d3.mean(asia_data, d => d.total_boosters)
+                                        })
+                
+                }
+                final_asia_data.sort(function(x, y){        // sort the data by date since some dates are not ordered in the csv file
+                    return d3.ascending(x.month, y.month);
+                })
+            }
+            gen_data('India', true)     // by default on start, generate data for india and update when the user calls for new country
+            // ################################################ DATA GENERATION END FOR QUERIES ################################################
+            
+            // ################################################ INFO STATISTICS ################################################
+            // This part displays total cases, deaths, vaccinations, boosters as values for that country within the selected time frame
+            // from brushing on the line graph
+            var newb = Array.from(d3.group(data, d => d.location), ([key, value]) => ({key, value}))        // group original data location wise for easy calculation
+            var svg_info = d3.select("#first").append("g").attr("transform", "translate(0," + 15 + ")")   // add a grp to the main svg to display information
+            var infopositionx = [40, 190, 340, 490, 640], infopositiony = 30;       // array to easily place each rectangle and text elements easily
+            // Add in the text values for the columns of the table
+            svg_info.append("g").append("text").text("Country").attr("x", infopositionx[0]+10).attr("y", infopositiony).attr("font-size", 16)
+            svg_info.append("g").append("text").text("Total Cases").attr("x", infopositionx[1]+10).attr("y", infopositiony).attr("font-size", 16)
+            svg_info.append("g").append("text").text("Total Deaths").attr("x", infopositionx[2]+10).attr("y", infopositiony).attr("font-size", 16)
+            svg_info.append("g").append("text").text("Total Vaccinations").attr("x", infopositionx[3]-10).attr("y", infopositiony).attr("font-size", 16)
+            svg_info.append("g").append("text").text("Total Boosters").attr("x", infopositionx[4]).attr("y", infopositiony).attr("font-size", 16)
+            // Add the rectangles that separate each column
+            svg_info.append("rect").attr("x", infopositionx[0]-25).attr("y", infopositiony-30).attr("height", 80).attr("width", 150).attr("fill", "none").attr("stroke", "gray")
+            svg_info.append("rect").attr("x", infopositionx[1]-25).attr("y", infopositiony-30).attr("height", 80).attr("width", 150).attr("fill", "none").attr("stroke", "gray")
+            svg_info.append("rect").attr("x", infopositionx[2]-25).attr("y", infopositiony-30).attr("height", 80).attr("width", 150).attr("fill", "none").attr("stroke", "gray")
+            svg_info.append("rect").attr("x", infopositionx[3]-25).attr("y", infopositiony-30).attr("height", 80).attr("width", 150).attr("fill", "none").attr("stroke", "gray")
+            svg_info.append("rect").attr("x", infopositionx[4]-25).attr("y", infopositiony-30).attr("height", 80).attr("width", 150).attr("fill", "none").attr("stroke", "gray")
+            
+            // This function displays the information statistics as a number above the map. It has been defined in a function to easily update the values
+            // whenever a new country is clicked upon. This function gets called everytime a new country is selected.
+            function display_info(country_to_display=country_from_map){     // takes in the name of country to display as arguement
+                svg_info.selectAll(".info").remove()        // remove all previous data
+                svg_info.append("g").datum(total_everything_info).append("text").attr("class", "info")  // add text to svg_info canvas with class 'info'
+                    .text(function(d){ return country_to_display;} )        // set the 1st column of table as the name of the country
+                    .attr("x", infopositionx[0]+10).attr("y", infopositiony+30).attr("font-size", 20)   // set position of the text
+                
+                svg_info.append("g").datum(total_everything_info).append("text").attr("class", "info")  // add text to svg_info canvas with class 'info'
+                    .text(function(d){ return d.get(country_to_display).total_cases_map;} )     // set the 2nd column as total cases of that country
+                    .attr("x", infopositionx[1]+10).attr("y", infopositiony+30).attr("font-size", 20)   // set position of the text
+
+                svg_info.append("g").datum(total_everything_info).append("text").attr("class", "info")  // add text to svg_info canvas with class 'info'
+                    .text(function(d){ return d.get(country_to_display).total_deaths_info;} )   // set the 3rd column as total deaths of that country
+                    .attr("x", infopositionx[2]+10).attr("y", infopositiony+30).attr("font-size", 20)   // set position of the text 
+
+                svg_info.append("g").datum(total_everything_info).append("text").attr("class", "info")  // add text to svg_info canvas with class 'info'
+                    .text(function(d){ return d.get(country_to_display).total_vaccinations_info;} )     // set the 4th column as total vaccinations of that country
+                    .attr("x", infopositionx[3]-10).attr("y", infopositiony+30).attr("font-size", 20)   // set position of the text
+
+                svg_info.append("g").datum(total_everything_info).append("text").attr("class", "info")  // add text to svg_info canvas with class 'info'
+                    .text(function(d){ return d.get(country_to_display).total_boosters_info;} )     // set the 5th column as the total boosters of the country
+                    .attr("x", infopositionx[4]).attr("y", infopositiony+30).attr("font-size", 20)  // set position of the text
+            }
+
+            var margin = {top: 20, right: 30, bottom: 30, left:50},     // define the margin values to space groups
+            width1 = 650,       // set width for 1st svg
+            height1 = 150;      // set height for 1st svg
+
+            // ################################################ THIS FOR MAP PLOT ################################################
+            var width4 = 800    // set width for 4th svg
+            var height4 = 500   // set height for 4th svg
+
+            var svg4 = d3.select("#first")        // select the main svg, append a group to it and assign it to variable svg4
+                            .append("g")
+                            .attr("transform", "translate(-40,100)");       // translate it to the desired position
+            
+            var map_to_plot = new Map();        // define a map that stores each country as key and its values as the total cases. This map is used to generate the coloring of the map
+            // define a map that stores each country as key and its values as the (total cases, deaths, vaccinations, boosters) to display the information
+            // in the table created above in svg_info canvas
+            var total_everything_info = new Map();
+            // This function generates the data for the above defined map variables filtered by the start date and end date defined. This is implemented to update data
+            // according to brushing that is done on line chart.
+            function gen_scalar_map_data(start_date, end_date){
+                map_to_plot.clear()     // clear the old map data from old runs of the function
+                for (let i=0; i<newb.length; i++){      // iterate through each country present in newb
+                    // initialize all data to 0 for each country.
+                    var total_cases_map = 0,
+                        total_deaths_info = 0,
+                        total_vaccinations_info = 0,
+                        total_boosters_info = 0,
+                        iso_code_map = "",
+                        country_info = "";
+                    // we filter data from continentts, all continents begin with OWID, thus if we encounter a continent we skip it
+                    if(newb[i].value[0].iso_code.includes("OWID")){     // if the location is a continent, continue the loop until a country is reached
+                        continue;
+                    }
+                        // Iterate through all the dates of that country and add up the total cases, deaths, vaccinations, boosters. If the data is null, replace it with 0
+                        for (let j=0; j<newb[i].value.length; j++){ // j was 
+                            current_date = parseDate(newb[i].value[j].date)
+                            if(start_date < current_date && current_date < end_date){
+                                iso_code_map = newb[i].value[0].iso_code
+                                total_cases_map += parseInt(newb[i].value[j].total_cases) || 0
+                                country_info = newb[i].value[0].location
+                                total_deaths_info += parseInt(newb[i].value[j].total_deaths) || 0
+                                total_vaccinations_info += parseInt(newb[i].value[j].total_vaccinations) || 0
+                                total_boosters_info += parseInt(newb[i].value[j].total_boosters) || 0
+                            }
+                        }
+                    map_to_plot.set(iso_code_map, total_cases_map)      // set the country as the key and its total cases as the value for that key
+                    // set the country as the key and its values as total cases, deaths, vacciantions and boosters. This map is used to display information in the table
+                    // in svg_info canvas
+                    total_everything_info.set(country_info, {total_cases_map, total_deaths_info, total_vaccinations_info, total_boosters_info})
+                }
+            }
+            
+            // This function draws the map. It has been defined so that it can be easily called when data is updated to redraw the map after brushing.
+            function gen_map(){
+                svg4.selectAll(".legend_data").remove()       // remove previous legend present
+                d3.selectAll(".legend_text").transition().duration(200).attr("opacity", 0).text("")     // set the previous legend text to null and fade it out
+                svg4.select(".legend_data").remove()       // remove extra legend present
+                var path = d3.geoPath();      // create paths for the map
+                var projection = d3.geoNaturalEarth1()        // create the projection that displays the map as a 2D object
+                                    .scale(165)
+                                    .translate([width4 / 2, height4 / 2])       // center the projection
+
+                var max_total_cases = Math.max(...map_to_plot.values()),    // get the min and max values of total cases from all countries
+                min_total_cases = Math.min(...map_to_plot.values())
+
+                no_of_bins = 7      // the number of bins to categorize the cases into. This generates 7 colors for each range of cases.
+                var interval = (max_total_cases - min_total_cases) / no_of_bins;      // define the interval between each bin equally
+                // out array stores the binned values
+                var out = Array(no_of_bins).fill().map((_, i) => [min_total_cases + i*interval, min_total_cases + (i + 1) * interval])
+
+                bins_array = new Array();       // create bins array this stores the values of each bin level starting from 0 to max cases
+                for (let i=0; i<out.length; i++){
+                    svg4.selectAll("path").remove()
+                    if(i==0){ bins_array.push(0); }     // start the binning with 0 cases
+                    else if(i==out.length-1){ bins_array.push(max_total_cases); }       // last value of the bin is the max value of cases
+                    else{ bins_array.push((out[i][1])); }       // push the upper value of the interval as the bin value
+                }
+                var colorScale = d3.scaleThreshold().domain(bins_array).range(d3.schemeOrRd[7]);      // define color scale to use for the map
+
+                // add legend to the map
+                var legend = svg4.append("g").attr("id", "legend");
+                var legend_data = legend.selectAll("g.legend")
+                                            .data(colorScale.range().map(function(d, i) {
+                                                // for adding reverse mapping i.e domain to range instead of the usual range to domain for interaction
+                                                d = colorScale.invertExtent(d);
+                                                // set color values for each value in bins_array
+                                                if (d[0] == null) d[0] = colorScale.domain()[0];
+                                                if (d[1] == null) d[1] = colorScale.domain()[1];
+                                                return d;
+                                            }))
+                                            .enter().append("g").attr("class", "legend_data");      // sub group to add text labels next to box
+
+                var legend_box_width = 20, legend_box_height = 20;        // define the width and height of legend rectangle
+                legend_data.append("rect")      // add the rectangle to the map
+                            .attr("x", 70)
+                            .attr("y", function(d, i) { return height4 - 50 - (i * legend_box_height) - 2 * legend_box_height; })   // position each rectangle below another
+                            .attr("width", legend_box_width)        // set the width of each legend
+                            .attr("height", legend_box_height)      // set the height of each legend
+                            .style("fill", function(d) { return colorScale(d[0]); })        // set the color of each rectangle according to bins_array
+                            .style("opacity", 1);
+
+                legend_data.append("text")      // add text to the legend, this displays the cases range the color represents
+                            .attr("class", "legend_text")
+                            .attr("x", 100)
+                            .attr("y", function(d, i){ return height4 - 50 - (i*legend_box_height) - legend_box_height - 4; })  // position each text below another
+                            .text(function(d, i){
+                                        if(bins_array[i]==0){ return bins_array[i]; }   // return 0 as 0 instead of returning an exponentital for 0
+                                        return bins_array[i].toExponential(2);      // cases are large so they are converted to exponents to display in small space
+                            });
+                
+                svg4.append("g")
+                    .selectAll("path")
+                    .data(geo_data.features)    // load in the geojson for displaying map
+                    .join("path")       // dynamically add required number of paths for the map
+                    .attr("class", "each_country" )     // assign it a class each_country to easily access it during mouse events
+                    .attr("d", d3.geoPath()
+                        .projection(projection)     // call the 2D projection of the map we defined earlier
+                    )
+                    .attr("fill", function (d) {
+                        d.total = map_to_plot.get(d.id) || 0;       //get the total cases for each country, if its null replace it with 0
+                        return colorScale(d.total);     // color according to the value of total cases, higher the cases, redder the color of the country
+                    })
+                    .style("opacity", 1)        // set the map's opacity to 100%
+                
+                // define mouse events for the map
+                svg4.selectAll("path")
+                    .on("mousemove", mousemovea )
+                    .on("mouseout", mouseouta )
+                    .on("click", click);
+            }
+            // ################################################ MAP PLOT ENDS HERE ################################################
+            
+            // ################################################ MAP MOUSE EVENTS ################################################
+
+            var country_from_map = ""       // this variable is used to store the name of country that is clicked on in the map as global variable
+            
+            function click(event, d){           // Click event - runs when user clicks on any country
+                country_from_map = d.properties.name        // get the name of the country that user has clicked
+                gen_data(country_from_map, true)            // generate data for that country from function defined above
+                redraw_cross()          // redraw the line graphs in the selected brush region if any
+                display_info()          // call the function defined earlier to show new data of the selected country from the map
+            }
+
+            function mousemovea(event, d) {     // Runs whenever mouse is moved over any country
+                country_from = d.properties.name        // get the name of the country mouse is hovering over
+                d3.selectAll(".tooltip").text("")       // set any text from old mouseovers to null
+                d3.selectAll(".each_country").transition().duration(200).style("opacity", .3)       // fade every country to 30%
+                d3.select(this).transition().duration(200).style("opacity", 1).style("stroke", "black")     // set the opacity of country hovered on to 100% to highlight the country easily
+                
+                svg4.append("text").attr("class", "tooltip")        // add text below the mouse
+                    .text(function(){ return "Country: " + d.properties.name; })    // return name of the country
+                    .attr("x", event.x+40).attr("y", event.y-20).attr("font-size", 12)
+                svg4.append("text").attr("class", "tooltip")        // add text below the mouse
+                    .text(function(){ return "Total Cases:" + d.total.toExponential(2); })  // return the number of cases in that country
+                    .attr("x", event.x+40).attr("y", event.y-5).attr("font-size", 12)
+
+                d3.selectAll(".bubbles").style("opacity", 0.1)      // select all the bubbles in the scatterplot and fade them to 10% opacity
+                d3.selectAll(".bubbles").data(for_gdp).filter(function(d){      // find the bubble for the country that is being hovered upon in the map
+                    return d.location == country_from;
+                })
+                .style("opacity", 1).attr("stroke", "black")        // set the opacity of the bubble representing hovered country to 100% to highlight the bubble.
+            }
+
+            function mouseouta(event, d) {      // runs whenever mouse if moved out of the country paths
+                d3.selectAll(".tooltip").text("")       // set the text of any old text elements from mouseovers to null
+                d3.selectAll(".each_country").transition().duration(200).style("opacity", 1)        // reset opacity of all paths back to 100%
+                d3.select(this).transition().duration(200).style("stroke", "none")
+                d3.selectAll(".bubbles").style("opacity", 1).attr("stroke", "none")     // reset opacity of all bubbles in scatterplot back to 100%
+            }
+
+            // Generate map data by default between these ranges that marks the start of the pandemic and display the map
+            gen_scalar_map_data(parseDate("2020-01-01"), parseDate("2022-03-01"))
+            gen_map()
+
+            // ############################################## QUERY 2 ############################################################
+            var for_gdp = new Array();      // this array stores data for the scatterplot - wealth of country vs pandemic evolution
+            xtrans4 = width4+margin.left
+
+            for (let i=0; i<newb.length; i++){  // for each country in newb array that was grouped by countries
+                // check for null data, if any required data is null, skip it and goto the next iteration
+                if(newb[i].value[0].gdp_per_capita == '' || newb[i].value[0].handwashing_facilities == '' || newb[i].value[0].life_expectancy == ''){
+                    continue;
+                }
+                // since the gdp, handwashing facilities and life expectancy of any country hasnt changed in the csv file, we dont need to sum or avg values
+                // thus we simply retain only the first row for the country that has all the 3 data we need and pop the rest
+                filter_data = newb[i].value.pop(newb[i].value.length - 1)
+                var hw = filter_data.handwashing_facilities     // store handwashing facilities number in hw
+                var le = filter_data.life_expectancy            // store life expectancy number in le
+                var gdp = filter_data.gdp_per_capita            // store gdp number in gdp
+                // Create the object that will store the iso code of the country, its location, gdp, life expectancy, and handwashing facilities.
+                // This object will be used to display the scatterplot
+                for_gdp.push({
+                                iso_code: filter_data.iso_code,
+                                location: newb[i].key,
+                                gdp_per_capita: parseFloat(gdp),
+                                life_expectancy: parseFloat(le),
+                                handwashing_facilities: parseFloat(hw),
+                })
+            }
+            filter_data = null;     // release memory used by filter_data for optimization purposes
+            var bubble_height = 180     // set the height of the scatterplot
+            var svg2 = d3.select("#first").append("g")      // create a grp within main svg that will house our scatterplot
+                            .attr("transform", "translate(" + xtrans4 + "," + margin.top + ")");
+
+            svg2.append("text").text("Wealth of population vs evolution of pandemic").attr("x", 10).attr("y", 10).attr("font-size", 25)     // set title of the graph above the scatterplot
+
+            svg2.append("text").text("Handwash Facilities").attr("x", 0).attr("y", 0).attr("font-size", 15).attr("transform", "translate(-30,170) rotate(-90)")     // set label for y axis
+            svg2.append("text").text("GDP").attr("x", 300).attr("y", bubble_height+40).attr("font-size", 15)        // set label for x axis
+
+            var legendx2 = 520, legendy2 = bubble_height - 80       // define the position for the legend for scatterplot
+            // add a border around the legend to separate it from the plot
+            svg2.append("rect").attr("x", legendx2-20).attr("y", legendy2-15).attr("height", 88).attr("width", 110).attr("fill", "none").attr("stroke", "gray").attr("stroke-width", 1.5)
+            
+            // generate 4 circles representing the 4 ranges for life expectancy one below the other offset by 20 and set their color to match the age range they represent with a radius of 6
+            svg2.append("circle").attr("cx",legendx2).attr("cy",legendy2).attr("r", 6).style("fill", "#FF1700")
+            svg2.append("circle").attr("cx",legendx2).attr("cy",legendy2 + 20).attr("r", 6).style("fill", "#FF8E00")
+            svg2.append("circle").attr("cx",legendx2).attr("cy",legendy2 + 40).attr("r", 6).style("fill", "#FFE400")
+            svg2.append("circle").attr("cx",legendx2).attr("cy",legendy2 + 60).attr("r", 6).style("fill", "#99e2b4")
+
+            // generate the text that displays the range each bubble color displays
+            svg2.append("text").attr("x", legendx2 + 10).attr("y", legendy2).text("< 60 years").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg2.append("text").attr("x", legendx2 + 10).attr("y", legendy2 + 20).text(" 67 - 75 years").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg2.append("text").attr("x", legendx2 + 10).attr("y", legendy2 + 40).text("75 - 77 years").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg2.append("text").attr("x", legendx2 + 10).attr("y", legendy2 + 60).text(" > 77 years").style("font-size", "13px").attr("alignment-baseline","middle")
+            // get the max gdp and highest handwashing facilities present to pass as domains for the axes
+            var max_gdp = d3.max(for_gdp, d => parseInt(d.gdp_per_capita))
+            var max_hw = d3.max(for_gdp, d => parseInt(d.handwashing_facilities))
+
+            var xgdp = d3.scaleLinear().domain([0, max_gdp]).range([0, width1-30]);     // create the scale for x axis that displays gdp
+            
+            svg2.append("g")
+                .attr("transform", "translate(0,"+bubble_height+")")        // set the start of y axis to the bottom of the graph
+                .call(d3.axisBottom(xgdp))      // add the y axis to the graph
+                
+            var ygdp = d3.scaleLinear().domain([max_hw, 0]).range([0, height1-10]);     // create the scale for y axis that displays the handwashing facilities of each country
+            var bubble_height_y = bubble_height - 140 
+            svg2.append("g")
+                .attr("transform", "translate(0,"+bubble_height_y+")")      // position the x axis to the bottom of the y axis
+                .call(d3.axisLeft(ygdp).ticks(5))       // add the x axis to the graph and display on 5 values of the y axis to avoid crowding
+
+            for_gdp.sort(function(x, y){        // sort the gdp from lowest to highest 
+                    return d3.ascending(x.gdp_per_capita, y.gdp_per_capita);
+            })
+            // each bubbles radius also represents the life expectancy of the country, so we scale the circle accordingly
+            var z = d3.scaleLinear().domain([0, 87]).range([ 1, 10]);     // max life expectancy in csv is 87 years which is mapped between 1-10 radius
+
+            svg2.append('g')        // add a grp to the svg that houses each bubble
+                .selectAll("dot")
+                .data(for_gdp)      // pass in the data we generated above
+                .join("circle")     // dynamically add the required circles
+                .attr("transform", "translate(0,"+bubble_height_y+")")
+                .attr("class", "bubbles")       // give it a class to easily manipulate during mouse events from this layout or other layout
+                // set the position of each circle
+                .attr("cx", d => xgdp(d.gdp_per_capita))
+                .attr("cy", d => ygdp(d.handwashing_facilities)) 
+                .attr("r", d => z(d.life_expectancy))       // set radius of bubble according to the life expectancy it represents
+                .style("fill", function(d){
+                    if(z(d.life_expectancy) > 8.8){ return "#99e2b4" }      // if life expectancy greater than 75 years make the bubble green
+                    else if(8 < z(d.life_expectancy) && z(d.life_expectancy) <= 8.8){ return "#FFE400" }        // between 67 and 75 make it yellow
+                    else if(7.2 < z(d.life_expectancy) && z(d.life_expectancy) <= 8){ return "#FF8E00" }        // between 60 and 67 make it orange
+                    else{ return "#FF1700" }         // less than 60 make it red
+                })
+                .style("opacity", "1")      // set the opacity of entire graph to 100%
+
+            // define mouse events for the scatter plot
+            svg2.selectAll(".bubbles")
+                .on("mouseover", mousemove_bubbles )
+                .on("mouseout", mouseout_bubbles )
+                .on("click", click_bubbles);
+            
+            function click_bubbles(event, d){   // click - when user clicks on any bubble
+                country_from_map = d.location        // get the name of the country that user has clicked
+                gen_data(d.location, true)      // generate data for the country that is clicked on my the user
+                redraw_cross()                  // redraw the line graphs for that country that display total cases, deaths, vaccinations and booster
+                display_info(d.location)        // call the function to update data that displays statistics about the country selected
+            }
+            var country_from_gdp = "all"
+            var country_color = ""      // variable that stores the color of the country it had previously before highlighting it
+
+            function mousemove_bubbles(event, d){       // mouseover - runs when mouse if hovered over the bubble
+                country_from_gdp = d.location;          // get the name of the country the bubble represents
+                d3.selectAll(".bubbles_tooltip").text("")   // set any previous text from other mouse events to null
+                d3.selectAll(".bubbles").transition().duration(200).style("opacity", .2)        // fade all bubbles to 20% opacity
+                d3.select(this).transition().duration(200).style("opacity", 1).attr("stroke", "black")      // set the opacity of hovered upon bubble to 100% to highlight it
+
+                // add text element below the mouse that displays the name of the country that mouse is hovered upon along with the gdp and handwashing facilities of the country
+                // font-weight is used to make the text bold
+                svg4.append("text").attr("class", "bubbles_tooltip")
+                    .text(function(){ return "Country:" + d.location; })
+                    .attr("x", event.x+40).attr("y", event.y-20).attr("font-size", 12).attr("font-weight", 700)
+                svg4.append("text").attr("class", "bubbles_tooltip")
+                    .text(function(){ return "GDP:" + d.gdp_per_capita; })
+                    .attr("x", event.x+40).attr("y", event.y-5).attr("font-size", 12).attr("font-weight", 700)
+                svg4.append("text").attr("class", "bubbles_tooltip")
+                    .text(function(){ return "Handwash:" + d.handwashing_facilities; })
+                    .attr("x", event.x+40).attr("y", event.y+10).attr("font-size", 12).attr("font-weight", 700)
+
+                // get the previous color of the country and store it so that upon mouseout the country can be assigned same color without regenerating the entire map
+                country_color = d3.selectAll(".each_country").data(geo_data.features)
+                                    .filter(function(d){ return d.properties.name == country_from_gdp;}).attr("fill")   // get fill attribute for the selected country
+                d3.selectAll(".each_country").style("opacity", 0.3)     // select all the countries in the map and fade them to 30% opacity
+                d3.selectAll(".each_country")
+                    .data(geo_data.features)
+                    .filter(function(d){ return d.properties.name == country_from_gdp; })       // filter for the country hovered upon in scatterplot and return the path of that country from map
+                    .attr("fill", "red").style("opacity", 1)        // set its color to red and opacity to 100% to highlight that country
+                
+            }
+
+            function mouseout_bubbles(event, d){        // mouseout - runs when user moves mouse out the bubbles in scatterplot
+                d3.selectAll(".bubbles_tooltip").text("")       // set the text from mouse events on the scatterplot to null
+                d3.selectAll(".bubbles").transition().duration(200).style("opacity", 1).attr("stroke", "none")      // reset each bubble to original opacity of 100%
+                d3.selectAll(".each_country").style("opacity", 1)       // reset each country in the map layout to original opacity of 100%
+                d3.selectAll(".each_country").data(geo_data.features).filter(function(d){       // select the country highlighted during mouseover
+                    return d.properties.name == country_from_gdp;
+                })
+                .attr("fill", function (d) {        // reset its color to the color it was before highlighting it
+                        return country_color;
+                    })
+            }
+            
+            // ############################################## QUERY 3 ############################################################
+            var ytrans3 = height1+110       // these variables are used to accurately position everything so everything does not need to be manually adjusted
+            var svg_3_info = d3.select("#first").append("g").attr("transform", "translate(" + xtrans4 + "," + ytrans3 + ")");   // add legend to the line graphs
+            svg_3_info.append("text").attr("x", 10).attr("y", 20).text("Evolution of pandemic").style("font-size", 25)      // title for the line graphs
+
+            // add text and line elements that represent the legend for the line graphs with a font size of 13px
+            svg_3_info.append("text").attr("x", 10).attr("y", 70).text("Total Cases").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg_3_info.append('line').style("stroke", "#17C3B2").style("stroke-width", 2).attr("x1", 85).attr("y1", 70).attr("x2", 105).attr("y2", 70);
+            svg_3_info.append("text").attr("x", 10).attr("y", 90).text("Total Deaths").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg_3_info.append('line').style("stroke", "#C19875").style("stroke-width", 2).attr("x1", 85).attr("y1", 90).attr("x2", 105).attr("y2", 90);
+
+            svg_3_info.append("text").attr("x", 10).attr("y", 210).text("Total Vaccinations").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg_3_info.append('line').style("stroke", "#F79256").style("stroke-width", 2).attr("x1", 115).attr("y1", 210).attr("x2", 135).attr("y2", 210);
+            svg_3_info.append("text").attr("x", 10).attr("y", 230).text("Total Boosters").style("font-size", "13px").attr("alignment-baseline","middle")
+            svg_3_info.append('line').style("stroke", "#E9AFA3").style("stroke-width", 2).attr("x1", 115).attr("y1", 230).attr("x2", 135).attr("y2", 230);
+            
+            svg_3_info.append("text").attr("x", 300).attr("y", 340).text("Time").style("font-size", 15)     // set x axis label as Time
+
+            var height3 = 70, width3 = 700, svg_height3 = 230;      // define the height of each line graph
+            ytrans3 += 70
+            var svg3 = d3.select("#first").append("g").attr("transform", "translate(" + xtrans4 + "," + ytrans3 + ")");     // add a grp to the main svg and movie to the desired position
+
+            var x = d3.scaleTime().domain([parseDate('2020-02-01'), parseDate('2022-01-26')]).range([0, width1-50]);        // create the scale for x axis that displays each date
+            var xAxis = svg3.append("g").call(d3.axisBottom(x)).attr("transform", "translate(0,"+230+")")       // add the x axis to the graph
+
+            var clip = svg3.append("defs").append("svg:clipPath").attr("id", "clip").append("svg:rect")       // define the area for brushing
+                            .attr("width", width3 - 100 ).attr("height", svg_height3 ).attr("x", 0).attr("y", 0);
+
+            var brush = d3.brushX()                   // add brush
+                            .extent( [ [0,0], [width3,svg_height3] ] )  // define the brush area that goes till the max width and height defined
+                            .on("end", updateChart)               // after brushing call the function update chart to change x axis and update data according to x axis
+
+            // 4 line graphs have been added using a for loop to avoid repetition of code and easy readability, thus this below array is used to set y axis scale as for loop progresses
+            scaleval = [d3.max(final_asia_data, d => d.new_cases),
+                        d3.max(final_asia_data, d => d.new_deaths),
+                        d3.max(final_asia_data, d => d.people_fully_vaccinated),
+                        d3.max(final_asia_data, d => d.total_boosters)]
+
+            color = ['#17C3B2', '#C19875', '#F79256', '#E9AFA3']        // color for each line graph
+            var line = svg3.append("g").attr("clip-path", "url(#clip)")   // create a grp with attribute and assign it to line on which path elements are appended
+            // var y = d3.scaleLinear().domain([scaleval[0], 0]).range([0, 100])   // create the 
+            height3 = 0         // this variable is used to set the location of each line graph since there are two line graphs grouped into one plot
+
+            for (let i = 0; i<4; i++){      // run for loop for 4 graphs that get displayed
+                var y = d3.scaleLinear().domain([scaleval[i], 0]).range([0, 100])       // create the scale for the data being displayed i.e. new cases if i=0, new deaths if i=1 and so on
+
+                if(i<2){ height3 = 0 }      // if first two line graphs are being plotted, they are plotted on same height. We are dual plotting line graphs
+                else{ height3 = 130 }       // for the last 2 line graphs, move them below the above line graph by 130
+
+                if(i == 1 || i == 3){       // for the 2nd line graphs added on top of the first line graph add their y axis on the right side of the graph (new deaths and boosters)
+                    svg3.append("g").call(d3.axisRight(y).ticks(6))
+                        .attr("class", "righty").style("stroke", function(){ return color[i] })     // give it a class to update them easily later
+                        .style("stroke-width", 0.7).attr("transform", "translate("+ 600 + "," + height3+")");   // set the color of text on y axis to the color of the line graph it is for
+                }
+                else{       // for the intial line graphs display their y axis on the left side of the graph (new cases and people fully vaccinated)
+                    svg3.append("g").call(d3.axisLeft(y).ticks(6))
+                        .attr("class", "lefty").style("stroke", function(){ return color[i] })      // give it a class to update them easily later
+                        .style("stroke-width", 0.7).attr("transform", "translate(0,"+height3+")");  // set the color of text on y axis to the color of the line graph it is for
+                }
+
+                line.append("path")          // add paths to display the line graph
+                    .datum(final_asia_data)            // pass data generated from gen_scalar_map_data function
+                    .attr("class", function(){ return "line"+i.toString(); })  // assign it a class for easy updating later on, each line gets a class like line0, line1, line2, line3
+                    .attr("fill", "none")
+                    .attr("stroke-width", 2)
+                    .attr("d", d3.line()
+                        .x(function(d){ return x(parseDate(d.month)); })        // set the x position of each point in the line
+                        .y(function(d){
+                            if(i==0){ return y(d.new_cases); }      // if i=0, set display the line graph for new cases
+                            else if(i==1){ return y(d.new_deaths); }        // if i=1, set display the line graph for new deaths
+                            else if(i==2){ return y(d.people_fully_vaccinated); }       // if i=2, set display the line graph for people fully vaccinated
+                            else if(i==3){ return y(d.total_boosters);      // if i=3, set display the line graph for total boosters
+                            };
+                        })
+                    )
+                    .attr("stroke",function(){      // set the color of each line graph with the color array defined above
+                        return color[i]
+                    })
+                    .attr("transform", function(){
+                        if(i==2 || i==3){ return "translate(0,"+height3+")"; }      // for last 2 graphs position them below the above graps
+                        else{ return "translate(0,0)"; }        // set the positon of first two graphs to the start of the group
+                    });
+                }
+            line.append("g").attr("class", "brush").call(brush);        // call the brush on the lines
+            
+            let idleTimeout
+            function idled() { idleTimeout = null; }
+
+            function updateChart(event,d) {     // function called when brushing is performed on the line graph
+
+                var height3 = 70;
+                extent = event.selection        // get the selected area from brushing
+
+                if(!extent){        // selection is null
+                    if (!idleTimeout) return idleTimeout = setTimeout(idled, 350); // This allows to wait a little bit
+                        x.domain([parseDate('2020-01-01'), parseDate('2022-03-01')])
+                        gen_scalar_map_data(parseDate("2020-01-01"), parseDate("2022-03-01"))
+                        gen_map()
+                    }else{      // when brushing is performed
+                        x.domain([ x.invert(extent[0]), x.invert(extent[1]) ])      // set the new domain of x axis to the dates between which brushing was done
+                        start_date_for_map = x.invert(extent[0])        // get the start date where brushing started
+                        end_date_for_map = x.invert(extent[1])          // get the end date where brushing ended
+                        gen_scalar_map_data(start_date_for_map, end_date_for_map)       // regenrate data only between the brushed date range
+                        gen_map()       // regenerate the map to dislpay data between the dates that were brushed in line graph
+                        line.select(".brush").call(brush.move, null)        // remove the selection rect after brushing
+                }
+
+                xAxis.transition().duration(1000).call(d3.axisBottom(x))        // set the new x axis 
+                redraw_cross()      // update the line graph to between the brushed area
+                display_info()      // update the summary statistics of the country to show data only between the date range brushed in line graph               
+            }
+            
+            // this function redraws the line graphs to display lines between the brushed area
+            function redraw_cross(){
+                d3.selectAll(".righty").transition().duration(1000).ease(d3.easeLinear).style("opacity", 0).remove()        // remove old y axes
+                d3.selectAll(".lefty").transition().duration(1000).ease(d3.easeLinear).style("opacity", 0).remove()        // remove the axes after the transition has completed
+                scaleval = [d3.max(final_asia_data, d => d.new_cases),      // get the new max values of each variable that the line graph displays between the dates brushed
+                        d3.max(final_asia_data, d => d.new_deaths),
+                        d3.max(final_asia_data, d => d.people_fully_vaccinated),
+                        d3.max(final_asia_data, d => d.total_boosters)]
+                        
+                for (let i = 0; i<4; i++){      // iterate till 4 to avoid repetition of code, same as done during drawing the line graph
+                    var y = d3.scaleLinear().domain([scaleval[i], 0]).range([0, 100])       // create the scale for the data being displayed i.e. new cases if i=0, new deaths if i=1 and so on
+                    
+                    if(i<2){ height3 = 0 }      // if first two line graphs are being plotted, they are plotted on same height. We are dual plotting line graphs
+                    else{ height3 = 130 }       // for the last 2 line graphs, move them below the above line graph by 130
+
+                    if(i == 1 || i == 3){       // for the 2nd line graphs added on top of the first line graph add their y axis on the right side of the graph (new deaths and boosters)
+                        svg3.append("g").call(d3.axisRight(y).ticks(6))
+                            .attr("class", "righty").style("stroke", function(){ return color[i] })     // set the color of text on y axis to the color of the line graph it is for
+                            .style("stroke-width", 0.7).attr("transform", "translate("+ 600 + "," + height3+")");   // give it a class to update them easily later
+                    }
+                    else{       // for the intial line graphs display their y axis on the left side of the graph (new cases and people fully vaccinated)
+                        svg3.append("g").call(d3.axisLeft(y).ticks(6))
+                            .attr("class", "lefty").style("stroke", function(){ return color[i] })      // set the color of text on y axis to the color of the line graph it is for
+                            .style("stroke-width", 0.7).attr("transform", "translate(0,"+height3+")");  // give it a class to update them easily later
+                    }
+
+                    // select the line according to the iteration value and store that line in current_line variable. this variable will be used to update each line graph
+                    if(i==0){ var current_line =  line.select(".line0")}
+                    else if(i==1){ var current_line =  line.select(".line1") }
+                    else if(i==2){ var current_line =  line.select(".line2") }
+                    else if(i==3){ var current_line =  line.select(".line3") }
+
+                    current_line.transition().duration(1000)        // transition each line graph to the udpated line graph between brushed dates
+                                .attr("d", d3.line()
+                                    .x(function(d){ return x(parseDate(d.month)); })        // set the x position of each point in the line
+                                    .y(function(d){
+                                        if(i==0){ return y(d.new_cases); }      // if i=0, set display the line graph for new cases
+                                        else if(i==1){ return y(d.new_deaths); }        // if i=1, set display the line graph for new deaths
+                                        else if(i==2){ return y(d.people_fully_vaccinated); }       // if i=2, set display the line graph for people fully vaccinated
+                                        else if(i==3){ return y(d.total_boosters);      // if i=3, set display the line graph for total boosters
+                                        };
+                                    })
+                                ) 
+                }
+            }
+   
+    })
+</script>
+</body>
+
+<!-- brushing reference - https://d3-graph-gallery.com/graph/line_brushZoom.html -->
